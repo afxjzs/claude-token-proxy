@@ -11,10 +11,6 @@ import {
 const app = Fastify({
   logger: {
     level: "info",
-    transport:
-      process.env.NODE_ENV !== "production"
-        ? { target: "pino-pretty", options: { translateTime: "HH:MM:ss" } }
-        : undefined,
   },
   // Disable body parsing for proxy routes - we stream raw bodies
   bodyLimit: 10 * 1024 * 1024,
