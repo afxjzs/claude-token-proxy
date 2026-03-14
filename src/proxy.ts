@@ -29,9 +29,8 @@ export async function proxyRequest(
       }
     }
 
-    // Inject auth
+    // Inject auth (OAuth tokens use Bearer auth, not x-api-key)
     headers["authorization"] = `Bearer ${token}`;
-    headers["x-api-key"] = token;
 
     return request(targetUrl, {
       method: req.method as any,
