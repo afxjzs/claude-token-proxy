@@ -1,0 +1,6 @@
+# Add this to your Caddyfile
+# Replace <tailnet> with your actual Tailscale tailnet name
+
+claude-proxy.<tailnet>.ts.net {
+	reverse_proxy localhost:3456
+}

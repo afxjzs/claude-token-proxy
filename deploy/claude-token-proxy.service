@@ -1,0 +1,29 @@
+[Unit]
+Description=Claude Token Proxy Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+Environment=NODE_ENV=production
+Environment=PORT=3456
+Environment=HOST=127.0.0.1
+# Set PROXY_API_KEY in an override or environment file:
+# Environment=PROXY_API_KEY=your-secret-key
+# EnvironmentFile=/etc/claude-token-proxy/env
+
+WorkingDirectory=/opt/claude-token-proxy
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.claude
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
