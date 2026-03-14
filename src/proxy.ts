@@ -32,6 +32,14 @@ export async function proxyRequest(
     // Inject auth (OAuth tokens use Bearer auth, not x-api-key)
     headers["authorization"] = `Bearer ${token}`;
 
+    // Required beta header to enable OAuth on the Anthropic API
+    const existingBeta = headers["anthropic-beta"] || "";
+    const betaFlags = existingBeta ? existingBeta.split(",").map((s) => s.trim()) : [];
+    if (!betaFlags.includes("oauth-2025-04-20")) {
+      betaFlags.push("oauth-2025-04-20");
+    }
+    headers["anthropic-beta"] = betaFlags.join(",");
+
     return request(targetUrl, {
       method: req.method as any,
       headers,
