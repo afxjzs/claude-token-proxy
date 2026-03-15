@@ -10,10 +10,10 @@
 ## Step 1: Clone and Build
 
 ```bash
-cd /opt
-sudo git clone https://github.com/afxjzs/anthropic-oauth-token-manager.git claude-token-proxy
-sudo chown -R $USER:$USER /opt/claude-token-proxy
-cd /opt/claude-token-proxy
+mkdir -p ~/nexus/infra
+cd ~/nexus/infra
+git clone https://github.com/afxjzs/claude-token-proxy.git
+cd claude-token-proxy
 npm install
 npm run build
 ```
@@ -41,37 +41,27 @@ chmod 600 ~/.claude/.credentials.json
 ## Step 3: Configure Environment
 
 ```bash
-cp .env.example /etc/claude-token-proxy/env
-sudo mkdir -p /etc/claude-token-proxy
-sudo tee /etc/claude-token-proxy/env > /dev/null <<'EOF'
-PORT=3456
-HOST=127.0.0.1
-PROXY_API_KEY=CHANGE_ME_TO_A_RANDOM_SECRET
-REFRESH_MARGIN_SECONDS=600
-CHECK_INTERVAL_SECONDS=60
-EOF
+cp .env.example .env
 ```
 
-Generate a random key for `PROXY_API_KEY`:
+Edit `.env` and set your `PROXY_API_KEY`. Generate a random one:
 
 ```bash
 openssl rand -hex 32
 ```
 
-Edit the file and paste the key:
-
 ```bash
-sudo nano /etc/claude-token-proxy/env
+nano ~/nexus/infra/claude-token-proxy/.env
 ```
 
-## Step 4: Install systemd Service
+## Step 4: Install systemd User Service
+
+No sudo required — this installs as a user-level systemd service:
 
 ```bash
-# Copy the service file, replacing %i with your username
-sudo cp /opt/claude-token-proxy/deploy/claude-token-proxy.service /etc/systemd/system/claude-token-proxy.service
+mkdir -p ~/.config/systemd/user
 
-# Edit the service file to set your actual username and add the env file
-sudo tee /etc/systemd/system/claude-token-proxy.service > /dev/null <<EOF
+cat > ~/.config/systemd/user/claude-token-proxy.service <<'EOF'
 [Unit]
 Description=Claude Token Proxy Service
 After=network-online.target
@@ -79,34 +69,29 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=$USER
-EnvironmentFile=/etc/claude-token-proxy/env
-WorkingDirectory=/opt/claude-token-proxy
-ExecStart=$(which node) dist/index.js
+WorkingDirectory=%h/nexus/infra/claude-token-proxy
+EnvironmentFile=%h/nexus/infra/claude-token-proxy/.env
+ExecStart=/usr/bin/node dist/index.js
 Restart=always
 RestartSec=5
 
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=$HOME/.claude
-PrivateTmp=true
-
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable claude-token-proxy
-sudo systemctl start claude-token-proxy
+systemctl --user daemon-reload
+systemctl --user enable claude-token-proxy
+systemctl --user start claude-token-proxy
+
+# Enable linger so the service runs even when you're not logged in
+loginctl enable-linger $USER
 ```
 
 Check it's running:
 
 ```bash
-sudo systemctl status claude-token-proxy
-journalctl -u claude-token-proxy -f
+systemctl --user status claude-token-proxy
+journalctl --user -u claude-token-proxy -f
 ```
 
 ## Step 5: Verify the Service
@@ -164,9 +149,10 @@ That's it. The Anthropic SDK reads `ANTHROPIC_BASE_URL` and `ANTHROPIC_API_KEY` 
 
 1. Intercepts the request
 2. Replaces the API key with the current valid OAuth token
-3. Forwards to `api.anthropic.com`
-4. Streams the response back (including SSE for streaming calls)
-5. Automatically refreshes the OAuth token before it expires
+3. Injects the required `anthropic-beta: oauth-2025-04-20` header
+4. Forwards to `api.anthropic.com`
+5. Streams the response back (including SSE for streaming calls)
+6. Automatically refreshes the OAuth token before it expires
 
 ### Node.js / TypeScript Example
 
@@ -231,7 +217,7 @@ curl -H "Authorization: Bearer YOUR_PROXY_API_KEY" http://host.docker.internal:3
 | Symptom | Fix |
 |---------|-----|
 | `/health` returns `"status":"error"` | Token expired and refresh failed. Run `claude auth login` again on the server to get a new refresh token. |
-| 401 errors through proxy | Check that your `PROXY_API_KEY` matches what's in `/etc/claude-token-proxy/env`. |
+| 401 errors through proxy | Check that your `PROXY_API_KEY` matches what's in `~/nexus/infra/claude-token-proxy/.env`. |
 | Docker container can't reach proxy | Ensure `extra_hosts: ["host.docker.internal:host-gateway"]` is in your compose file. Test with `curl http://host.docker.internal:3456/health` from inside the container. |
 | Refresh token cascade failure | If both access and refresh tokens are dead, the only fix is `claude auth login` on the server. The `/health` endpoint will show this state. |
 | Conflict with Claude CLI | Don't run interactive Claude CLI sessions on the same server. The refresh token is single-use — if the CLI consumes it, the proxy's next refresh will fail. |
@@ -239,9 +225,9 @@ curl -H "Authorization: Bearer YOUR_PROXY_API_KEY" http://host.docker.internal:3
 ## Updating
 
 ```bash
-cd /opt/claude-token-proxy
+cd ~/nexus/infra/claude-token-proxy
 git pull
 npm install
 npm run build
-sudo systemctl restart claude-token-proxy
+systemctl --user restart claude-token-proxy
 ```
